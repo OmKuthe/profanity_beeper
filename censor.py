@@ -9,14 +9,14 @@ def load_bad_words():
 
 BAD_WORDS = load_bad_words()
 
-def censor_video(video_path, word_timestamps, output_path):
+def censor_video(video_path, flagged_words, output_path):
 
     video = VideoFileClip(video_path)
     audio = AudioSegment.from_file(video_path)
 
     beep = Sine(1000).to_audio_segment(duration=300).apply_gain(-5)
 
-    for w in word_timestamps:
+    for w in flagged_words:
         if w["word"] in BAD_WORDS:
             start = int(w["start"] * 1000)
             end = int(w["end"] * 1000)

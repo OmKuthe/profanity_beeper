@@ -1,6 +1,9 @@
 import streamlit as st
 import os
-from whisper_transcibe import transcribe_audio
+
+from speech_models.whisper_model import transcribe
+from profanity_models.keyword_filter import detect as keyword_detect
+from profanity_models.tfidf_model import detect as tfidf_detect
 from censor import censor_video
 
 st.title("🔊 AI Profanity Video Censor")
@@ -14,20 +17,26 @@ if uploaded_file:
 
     st.video(input_path)
 
+    nlp_option = st.selectbox(
+        "Choose Profanity Detection Algorithm",
+        ["Keyword Matching", "TF-IDF + Logistic Regression"]
+    )
+
     if st.button("Censor Video"):
 
-        with st.spinner("Transcribing audio..."):
-            words = transcribe_audio(input_path)
+        with st.spinner("Transcribing..."):
+            words = transcribe(input_path)
 
-        st.success("Transcription Done!")
+        if nlp_option == "Keyword Matching":
+            flagged = keyword_detect(words)
+        else:
+            flagged = tfidf_detect(words)
 
-        with st.spinner("Beeping bad words..."):
+        st.write("Detected Profanity Words:")
+        st.write(flagged)
+
+        with st.spinner("Censoring..."):
             output_path = "temp/output.mp4"
-            censor_video(input_path, words, output_path)
-
-        st.success("Done!")
+            censor_video(input_path, flagged, output_path)
 
         st.video(output_path)
-
-        with open(output_path, "rb") as f:
-            st.download_button("Download Censored Video", f, file_name="censored.mp4")
