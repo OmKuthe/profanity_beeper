@@ -5,7 +5,6 @@ from censor import censor_video
 
 from evaluation.metrics import evaluate, plot_confusion_matrix
 
-# Add these new imports for audio visualization
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
@@ -125,7 +124,6 @@ if uploaded_file:
                 from collections import Counter
                 word_freq = Counter([w["word"].lower() for w in words]).most_common(10)
                 st.write(word_freq)
-
         # =====================================
         # STAGE 4 — CLASSIFICATION DECISION
         # =====================================
@@ -136,33 +134,35 @@ if uploaded_file:
             if nlp_option == "Keyword":
                 from profanity_models.keyword_filter import detect
                 flagged = detect(words)
-
+                
             elif nlp_option == "TF-IDF":
                 from profanity_models.tfidf_model import detect
                 flagged = detect(words)
-
+                
             elif nlp_option == "LSTM":
                 from profanity_models.lstm_model import detect
                 flagged = detect(words)
-
-            else:
+                
+            else:  # BERT
                 from profanity_models.bert_model import detect
                 flagged = detect(words)
 
         st.success("Profanity Detection Completed!")
 
-        # Display detection results
+        # Calculate flagged count (FIX: define this before using it)
         flagged_count = len(flagged)
+
+        # Display detection results
         st.markdown(f"### 🚨 Detected {flagged_count} profane words")
-        
+
         if flagged_count > 0:
             profane_words = [w["word"] for w in flagged]
             st.write("**Profane words found:**", ", ".join(profane_words))
-        
+
         with st.expander("📋 View Classification Details"):
             st.write("**Model Decision Logic:**")
             st.write(f"- Using {nlp_option} model for classification")
-            st.write(f"- Words analyzed: {word_count}")
+            st.write(f"- Words analyzed: {len(words)}")
             st.write(f"- Confidence threshold: 0.5")
 
         # =========================
@@ -188,7 +188,7 @@ if uploaded_file:
         # Ground truth (based on keyword list for demo)
         from profanity_models.keyword_filter import BAD_WORDS
 
-        true_labels = [1 if w["word"] in BAD_WORDS else 0 for w in words]
+        true_labels = [1 if w["word"].lower() in BAD_WORDS else 0 for w in words]
         predicted_labels = [1 if w in flagged else 0 for w in words]
 
         acc, prec, rec, f1, cm = evaluate(true_labels, predicted_labels)
