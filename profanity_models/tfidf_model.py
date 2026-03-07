@@ -1,107 +1,113 @@
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+import joblib
+import os
+from nltk.stem import WordNetLemmatizer
+import nltk
 
-# =====================================
-# SIMPLE TRAINING DATASET
-# =====================================
-# Profane words (label = 1)
-profane_words = [
-    "fuck", "fucking", "fucked", "fucker", "fuckers", "fuckin",
-    "shit", "shitting", "shitted", "bullshit", "shitty",
-    "damn", "damned", "goddamn", "dammit",
-    "bitch", "bitches", "bitching",
-    "ass", "asshole", "asses",
-    "cunt", "pussy", "dick", "cock",
-    "bastard", "bastards",
-    "whore", "slut", "hooker",
-    "piss", "pissing", "pissed",
-    "motherfucker", "motherfucking",
-]
+# Download required NLTK data
+try:
+    nltk.data.find('corpora/wordnet')
+except LookupError:
+    nltk.download('wordnet', quiet=True)
 
-# Clean words (label = 0) - just a few common ones
-clean_words = [
-    "hello", "hi", "hey",
-    "please", "thank", "thanks",
-    "the", "a", "an",
-    "and", "or", "but",
-    "is", "are", "was",
-    "good", "bad", "nice",
-    "you", "your", "i", "me",
-    "can", "will", "would",
-    "up", "down", "here", "there","like","patrick","shut"
-]
-
-# Combine and create labels
-texts = profane_words + clean_words
-labels = [1] * len(profane_words) + [0] * len(clean_words)
-
-print(f"Training samples: {len(texts)} total")
-print(f"  - Profane words: {len(profane_words)}")
-print(f"  - Clean words: {len(clean_words)}")
-
-# =====================================
-# VECTORIZER & MODEL
-# =====================================
-vectorizer = TfidfVectorizer(
-    lowercase=True,
-    analyzer='char_wb',
-    ngram_range=(2, 4),
-    min_df=1,
-)
-
-X = vectorizer.fit_transform(texts)
-
-model = LogisticRegression(
-    C=1.0,
-    max_iter=1000,
-    random_state=42,
-    class_weight='balanced'  # Handle any imbalance
-)
-model.fit(X, labels)
-
-# =====================================
-# DETECTION FUNCTION
-# =====================================
-def detect(words):
-    """
-    Args:
-        words: List of dicts [{"word": str, "start": float, "end": float}, ...]
+class TFIDFProfanityDetector:
+    def __init__(self):
+        self.vectorizer = TfidfVectorizer(max_features=5000, lowercase=True)
+        self.classifier = LogisticRegression()
+        self.lemmatizer = WordNetLemmatizer()
+        self.is_trained = False
+        
+        # Try to load pre-trained model
+        model_path = os.path.join(os.path.dirname(__file__), 'tfidf_model.pkl')
+        if os.path.exists(model_path):
+            self.load_model(model_path)
+        else:
+            # Train on some default data
+            self._train_default()
     
-    Returns:
-        List of dicts for profane words (same format as input)
-    """
-    flagged = []
+    def _train_default(self):
+        """Train on default dataset"""
+        # Sample training data
+        train_texts = [
+            "this is a damn good movie",
+            "what the hell is going on",
+            "i love this movie",
+            "this is great",
+            "that's shit",
+            "you are awesome",
+            "fuck you",
+            "have a nice day",
+            "bloody hell",
+            "wonderful performance"
+        ]
+        train_labels = [1, 1, 0, 0, 1, 0, 1, 0, 1, 0]
+        
+        # Train
+        X = self.vectorizer.fit_transform(train_texts)
+        self.classifier.fit(X, train_labels)
+        self.is_trained = True
     
-    if not words:
+    def lemmatize_text(self, text):
+        """Apply lemmatization to text"""
+        words = text.split()
+        lemmatized = [self.lemmatizer.lemmatize(w.lower()) for w in words]
+        return ' '.join(lemmatized)
+    
+    def detect(self, words, use_lemmas=True):
+        """
+        Detect profanity using TF-IDF model
+        """
+        flagged = []
+        
+        # Convert words to text
+        if isinstance(words, list):
+            if all(isinstance(w, dict) for w in words):
+                # Extract words from dictionaries
+                text_words = [w.get('word', '') for w in words]
+            else:
+                text_words = words
+            
+            text = ' '.join(text_words)
+        else:
+            text = words
+        
+        # Apply lemmatization if requested
+        if use_lemmas:
+            text = self.lemmatize_text(text)
+        
+        # Transform and predict
+        if self.is_trained and text.strip():
+            X = self.vectorizer.transform([text])
+            proba = self.classifier.predict_proba(X)[0]
+            
+            # If probability of profanity > 0.5, flag all words? 
+            # For simplicity, we'll flag based on keyword matching in this demo
+            if proba[1] > 0.5:
+                # Fall back to keyword detection for individual words
+                from .keyword_filter import detect as keyword_detect
+                flagged = keyword_detect(words, use_lemmas=use_lemmas)
+        
         return flagged
     
-    # Transform all words
-    word_texts = [w["word"].lower() for w in words]
-    X_test = vectorizer.transform(word_texts)
+    def save_model(self, path):
+        """Save trained model"""
+        joblib.dump({
+            'vectorizer': self.vectorizer,
+            'classifier': self.classifier
+        }, path)
     
-    # Get predictions
-    predictions = model.predict(X_test)
-    
-    # Flag only the profane ones
-    for i, w in enumerate(words):
-        if predictions[i] == 1:
-            flagged.append(w)
-    
-    return flagged
+    def load_model(self, path):
+        """Load trained model"""
+        data = joblib.load(path)
+        self.vectorizer = data['vectorizer']
+        self.classifier = data['classifier']
+        self.is_trained = True
 
-# Quick test
-if __name__ == "__main__":
-    test_words = [
-        {"word": "fuck", "start": 0, "end": 1},
-        {"word": "hello", "start": 1, "end": 2},
-        {"word": "damn", "start": 2, "end": 3},
-        {"word": "please", "start": 3, "end": 4},
-        {"word": "bitch", "start": 4, "end": 5},
-        {"word": "the", "start": 5, "end": 6},
-        {"word": "shit", "start": 6, "end": 7},
-    ]
-    
-    results = detect(test_words)
-    print("Flagged words:", [w["word"] for w in results])
-    
-    # Should print: ['fuck', 'damn', 'bitch', 'shit']
+# Create global instance
+_detector = TFIDFProfanityDetector()
+
+def detect(words, use_lemmas=True):
+    """Main detection function"""
+    return _detector.detect(words, use_lemmas)
